@@ -1,0 +1,135 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ColorAid – Subir Imagen + Filtro Real</title>
+
+<style>
+    body { margin:0; font-family:Arial; background:#f2f2f2; }
+    header { background:#005bbb; padding:15px; color:white; font-size:22px; }
+    .container { padding:20px; }
+    .mode-option {
+        background:white; padding:15px; margin:10px 0;
+        border-radius:10px; border-left:6px solid #007bff; cursor:pointer;
+    }
+    .btn {
+        background:#007bff; color:white; padding:12px; border-radius:10px;
+        margin:10px 0; cursor:pointer; text-align:center;
+    }
+    canvas { margin-top:15px; max-width:100%; border-radius:10px; }
+</style>
+</head>
+
+<body>
+
+<header>ColorAid – Filtro Daltonismo (Matriz 3×3)</header>
+
+<div class="container">
+
+    <h2>1. Sube una imagen</h2>
+    <input type="file" id="imageInput" accept="image/*">
+
+    <h2>2. Elige un modo</h2>
+
+    <div class="mode-option" onclick="applyMatrix('deuteranopia')">
+        Deuteranopia (Rojo–Verde)
+    </div>
+
+    <div class="mode-option" onclick="applyMatrix('protanopia')">
+        Protanopia (Rojo débil)
+    </div>
+
+    <div class="mode-option" onclick="applyMatrix('tritanopia')">
+        Tritanopia (Azul–Amarillo)
+    </div>
+
+    <h2>3. Resultado</h2>
+    <canvas id="canvas"></canvas>
+
+</div>
+
+<script>
+// MATRICES 3×3 REALES
+const matrices = {
+    deuteranopia: [
+        [0.625, 0.375, 0.000],
+        [0.700, 0.300, 0.000],
+        [0.000, 0.300, 0.700]
+    ],
+    protanopia: [
+        [0.567, 0.433, 0.000],
+        [0.558, 0.442, 0.000],
+        [0.000, 0.242, 0.758]
+    ],
+    tritanopia: [
+        [0.950, 0.050, 0.000],
+        [0.000, 0.433, 0.567],
+        [0.000, 0.475, 0.525]
+    ]
+};
+
+let originalImg = new Image();
+let selectedMatrix = null;
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+// Cargar imagen desde el input
+document.getElementById("imageInput").addEventListener("change", function(e){
+    const file = e.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = function(event){
+        originalImg = new Image();
+        originalImg.onload = function(){
+            canvas.width = originalImg.width;
+            canvas.height = originalImg.height;
+            ctx.drawImage(originalImg, 0, 0);
+        }
+        originalImg.src = event.target.result;
+    }
+
+    if (file) reader.readAsDataURL(file);
+});
+
+// Aplicar filtro al elegir matriz
+function applyMatrix(type) {
+    if (!originalImg.src) {
+        alert("Primero sube una imagen, compita 😅");
+        return;
+    }
+
+    selectedMatrix = matrices[type];
+    filterImage();
+}
+
+// Procesar píxeles de la imagen
+function filterImage() {
+    ctx.drawImage(originalImg, 0, 0);
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let data = imageData.data;
+    let m = selectedMatrix;
+
+    for (let i = 0; i < data.length; i += 4) {
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
+
+        // aplicar matriz 3×3
+        let nr = r * m[0][0] + g * m[0][1] + b * m[0][2];
+        let ng = r * m[1][0] + g * m[1][1] + b * m[1][2];
+        let nb = r * m[2][0] + g * m[2][1] + b * m[2][2];
+
+        data[i]     = Math.min(255, nr);
+        data[i + 1] = Math.min(255, ng);
+        data[i + 2] = Math.min(255, nb);
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+</script>
+
+</body>
+</html>
