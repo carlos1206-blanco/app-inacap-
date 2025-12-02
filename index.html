@@ -3,52 +3,76 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ColorAid – Imagen + Cámara Trasera Opcional</title>
+<title>ColorAid – Corrección Rápida</title>
 
 <style>
-    body { margin:0; font-family:Arial; background:#f2f2f2; text-align:center; }
-    header { background:#005bbb; padding:15px; color:white; font-size:22px; }
-    h2 { margin-top:25px; }
-    .mode-btn, .action-btn, .close-btn {
-        background:white; padding:12px; margin:10px auto;
-        width:80%; max-width:300px; border-radius:10px;
-        border-left:6px solid #007bff; cursor:pointer;
-        font-size:18px;
+    body { margin:0; font-family:Arial, sans-serif; background:#f2f2f2; text-align:center; padding-bottom: 50px; }
+    header { background:#005bbb; padding:15px; color:white; font-size:22px; font-weight: bold; }
+    h2 { margin-top:25px; color: #333; }
+    
+    .mode-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px;
     }
+
+    .mode-btn, .action-btn, .close-btn {
+        background:white; padding:12px; 
+        width: 100%; max-width:300px; border-radius:10px;
+        border-left:6px solid #007bff; cursor:pointer;
+        font-size:16px; user-select: none;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        margin: 5px auto;
+    }
+    
+    .mode-btn:active, .action-btn:active { transform: scale(0.98); }
     .action-btn { background:#007bff; color:white; border-left:none; }
-    .close-btn { background:#ff3b3b; color:white; border-left:none; }
-    video, canvas {
+    .close-btn { background:#ff3b3b; color:white; border-left:none; display: none; } /* Oculto por defecto */
+    
+    /* El canvas se estira por CSS para verse bien, pero internamente será pequeño para ser rápido */
+    canvas {
         width:90%; max-width:400px; margin-top:15px;
         border-radius:10px; background:black;
+        display: block; margin-left: auto; margin-right: auto;
     }
+    
+    #videoElement { display: none; } /* El video original siempre oculto */
 </style>
 </head>
 
 <body>
 
-<header>ColorAid – Imagen + Cámara Trasera Opcional</header>
+<header>ColorAid</header>
 
-<h2>1. Selecciona un modo de corrección</h2>
-<div class="mode-btn" onclick="setMatrix('deuteranopia')">Deuteranopia</div>
-<div class="mode-btn" onclick="setMatrix('protanopia')">Protanopia</div>
-<div class="mode-btn" onclick="setMatrix('tritanopia')">Tritanopia</div>
+<h2>1. Selecciona el modo</h2>
+<div class="mode-container">
+    <div class="mode-btn" onclick="setMatrix('deuteranopia')">Deuteranopia (Rojo/Verde)</div>
+    <div class="mode-btn" onclick="setMatrix('protanopia')">Protanopia (Rojo opaco)</div>
+    <div class="mode-btn" onclick="setMatrix('tritanopia')">Tritanopia (Azul/Amarillo)</div>
+</div>
 
-<h2>2. Subir una imagen</h2>
+<h2>2. Subir imagen</h2>
 <input type="file" id="imageInput" accept="image/*">
-
 <canvas id="imageCanvas"></canvas>
 
-<h2>3. Cámara (opcional)</h2>
+<h2>3. Cámara en vivo</h2>
+<div class="action-btn" id="btnStart" onclick="startCamera()">Activar cámara</div>
+<div class="close-btn" id="btnStop" onclick="stopCamera()">Detener cámara</div>
 
-<div class="action-btn" onclick="startCamera()">Activar cámara trasera</div>
-<div class="close-btn" onclick="stopCamera()">Cerrar cámara</div>
-
-<!-- Cámara comienza oculta -->
-<video id="video" autoplay playsinline style="display:none;"></video>
 <canvas id="videoCanvas" style="display:none;"></canvas>
 
+<video id="videoElement" autoplay playsinline></video>
+
 <script>
-// MATRICES 3×3 REALISTAS
+// --- VARIABLES GLOBALES ---
+let selectedMatrix = null; // Inicialmente nulo
+let cameraStream = null;
+let cameraRunning = false;
+let animationId = null;
+
+// --- MATRICES 3×3 ---
 const matrices = {
     deuteranopia: [
         [0.625, 0.375, 0.000],
@@ -67,155 +91,175 @@ const matrices = {
     ]
 };
 
+// Establecer matriz por defecto (opcional) o esperar click
+// selectedMatrix = matrices.deuteranopia; 
+
 function setMatrix(type){
     selectedMatrix = matrices[type];
-    if(originalImg.src){ 
+    alert("Modo activado: " + type); // Feedback visual simple
+    
+    // Si hay una imagen cargada estática, reaplicar filtro
+    if(originalImg.src && !cameraRunning){ 
         applyMatrixToImage(); 
     }
 }
 
-
-// ---------------- IMAGEN ------------------
-
+// ---------------- LÓGICA DE IMAGEN ESTÁTICA ------------------
 let originalImg = new Image();
 const imageCanvas = document.getElementById("imageCanvas");
 const imgCtx = imageCanvas.getContext("2d");
 
 document.getElementById("imageInput").addEventListener("change", function(e){
     const file = e.target.files[0];
-    const reader = new FileReader();
+    if(!file) return;
+    
+    // Detener cámara si se sube foto para ahorrar recursos
+    if(cameraRunning) stopCamera();
 
+    const reader = new FileReader();
     reader.onload = function(event){
         originalImg = new Image();
         originalImg.onload = function(){
-            imageCanvas.width = originalImg.width;
-            imageCanvas.height = originalImg.height;
-            imgCtx.drawImage(originalImg, 0, 0);
+            // Ajustar tamaño del canvas a la imagen (limitando si es gigante)
+            const MAX_IMG_WIDTH = 800;
+            let scale = 1;
+            if(originalImg.width > MAX_IMG_WIDTH){
+                scale = MAX_IMG_WIDTH / originalImg.width;
+            }
+            imageCanvas.width = originalImg.width * scale;
+            imageCanvas.height = originalImg.height * scale;
+
+            // Dibujar imagen original redimensionada
+            imgCtx.drawImage(originalImg, 0, 0, imageCanvas.width, imageCanvas.height);
+            
+            // Aplicar filtro si ya se seleccionó uno
             if(selectedMatrix) applyMatrixToImage();
         }
         originalImg.src = event.target.result;
     }
-
-    if (file) reader.readAsDataURL(file);
+    reader.readAsDataURL(file);
 });
 
 function applyMatrixToImage(){
-    if(!selectedMatrix || !originalImg.src) return;
+    if(!selectedMatrix) return;
+    
+    // Redibujar imagen limpia antes de filtrar
+    imgCtx.drawImage(originalImg, 0, 0, imageCanvas.width, imageCanvas.height);
 
-    imgCtx.drawImage(originalImg, 0, 0);
     let imgData = imgCtx.getImageData(0, 0, imageCanvas.width, imageCanvas.height);
-    let data = imgData.data;
-    let m = selectedMatrix;
-
-    for(let i=0; i<data.length; i+=4){
-        let r = data[i], g = data[i+1], b = data[i+2];
-
-        let nr = r*m[0][0] + g*m[0][1] + b*m[0][2];
-        let ng = r*m[1][0] + g*m[1][1] + b*m[1][2];
-        let nb = r*m[2][0] + g*m[2][1] + b*m[2][2];
-
-        data[i]   = Math.min(255, nr);
-        data[i+1] = Math.min(255, ng);
-        data[i+2] = Math.min(255, nb);
-    }
-
+    filterData(imgData.data);
     imgCtx.putImageData(imgData, 0, 0);
 }
 
-
-<script>
-
-// ---------------- CÁMARA ------------------
-
-let cameraStream = null;
-let cameraRunning = false;
-let cameraLoop = null; // loop del filtro
+// ---------------- LÓGICA DE CÁMARA (OPTIMIZADA) ------------------
+const videoElement = document.getElementById("videoElement");
+const videoCanvas = document.getElementById("videoCanvas");
+const vidCtx = videoCanvas.getContext("2d", { willReadFrequently: true }); 
+// 'willReadFrequently' avisa al navegador que leeremos píxeles constantemente
 
 function startCamera(){
-    if(cameraRunning) return; // evita doble cámara
-    cameraRunning = true;
+    if(cameraRunning) return;
 
-    // Mostrar ambos (video + canvas filtrado)
-    video.style.display = "block";
-    videoCanvas.style.display = "block";
+    // UI Updates
+    document.getElementById("videoCanvas").style.display = "block";
+    document.getElementById("imageCanvas").style.display = "none"; // Ocultar imagen estática
+    document.getElementById("btnStart").style.display = "none";
+    document.getElementById("btnStop").style.display = "block";
 
-    navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }
-    })
+    const constraints = {
+        audio: false,
+        video: {
+            facingMode: "environment", // Intenta cámara trasera
+            width: { ideal: 640 },     // Pedimos resolución baja nativamente
+            height: { ideal: 480 }
+        }
+    };
+
+    navigator.mediaDevices.getUserMedia(constraints)
     .then(stream => {
         cameraStream = stream;
-        video.srcObject = stream;
-        startCameraLoop();
+        videoElement.srcObject = stream;
+        cameraRunning = true;
+        videoElement.play();
+        requestAnimationFrame(processCameraLoop);
     })
     .catch(err => {
-        alert("No pude abrir la cámara trasera 😢\nIntentaré con la delantera...");
-        navigator.mediaDevices.getUserMedia({ video:true })
-        .then(stream => {
-            cameraStream = stream;  // 👈 antes faltaba ESTO
-            video.srcObject = stream;
-            startCameraLoop();
-        });
+        console.error(err);
+        alert("Error al acceder a la cámara. Asegúrate de dar permisos o usar HTTPS.");
+        stopCamera();
     });
 }
 
 function stopCamera(){
     cameraRunning = false;
+    if(animationId) cancelAnimationFrame(animationId);
 
     if(cameraStream){
-        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream.getTracks().forEach(track => track.stop());
         cameraStream = null;
     }
+    
+    videoElement.srcObject = null;
 
-    cancelAnimationFrame(cameraLoop); // 👈 detiene el loop del filtro
-
-    video.style.display = "none";
-    videoCanvas.style.display = "none";
+    // UI Updates
+    document.getElementById("videoCanvas").style.display = "none";
+    document.getElementById("imageCanvas").style.display = "block";
+    document.getElementById("btnStart").style.display = "block";
+    document.getElementById("btnStop").style.display = "none";
 }
 
-function startCameraLoop(){
-    function render(){
-        if(!cameraRunning) return;
+function processCameraLoop(){
+    if(!cameraRunning) return;
 
-        if(video.readyState === video.HAVE_ENOUGH_DATA){
+    if(videoElement.readyState === videoElement.HAVE_ENOUGH_DATA){
+        
+        // TRUCO DE RENDIMIENTO:
+        // Forzamos el canvas interno a ser pequeño (ej. 400px ancho)
+        // El CSS lo estirará para que se vea grande en el celular.
+        const MAX_WIDTH = 400; 
+        const scale = Math.min(1, MAX_WIDTH / videoElement.videoWidth);
+        
+        videoCanvas.width = videoElement.videoWidth * scale;
+        videoCanvas.height = videoElement.videoHeight * scale;
 
-            videoCanvas.width = video.videoWidth;
-            videoCanvas.height = video.videoHeight;
+        // Dibujar frame actual del video al canvas (redimensionado)
+        vidCtx.drawImage(videoElement, 0, 0, videoCanvas.width, videoCanvas.height);
 
-            // cámara sin filtro
-            // (solo se muestra, no la tocamos)
-
-            // cámara con filtro (canvas)
-            vidCtx.drawImage(video, 0, 0);
-
-            if(selectedMatrix){
-                let frame = vidCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
-                let data = frame.data;
-                let m = selectedMatrix;
-
-                for(let i=0; i<data.length; i+=4){
-                    let r = data[i], g = data[i+1], b = data[i+2];
-                    data[i]   = Math.min(255, r*m[0][0] + g*m[0][1] + b*m[0][2]);
-                    data[i+1] = Math.min(255, r*m[1][0] + g*m[1][1] + b*m[1][2]);
-                    data[i+2] = Math.min(255, r*m[2][0] + g*m[2][1] + b*m[2][2]);
-                }
-
-                vidCtx.putImageData(frame, 0, 0);
-            }
+        // Si hay matriz seleccionada, manipular píxeles
+        if(selectedMatrix){
+            let frame = vidCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
+            filterData(frame.data); // Usamos la función compartida
+            vidCtx.putImageData(frame, 0, 0);
         }
-
-        cameraLoop = requestAnimationFrame(render);
     }
 
-    render();
+    animationId = requestAnimationFrame(processCameraLoop);
 }
 
+// ---------------- FUNCIÓN DE FILTRADO COMPARTIDA ------------------
+// Esta función hace la matemática pura para no repetir código
+function filterData(data){
+    let m = selectedMatrix;
+    for(let i=0; i<data.length; i+=4){
+        let r = data[i];
+        let g = data[i+1];
+        let b = data[i+2];
 
+        // Multiplicación de matriz
+        let nr = r*m[0][0] + g*m[0][1] + b*m[0][2];
+        let ng = r*m[1][0] + g*m[1][1] + b*m[1][2];
+        let nb = r*m[2][0] + g*m[2][1] + b*m[2][2];
 
+        data[i]   = nr; 
+        data[i+1] = ng; 
+        data[i+2] = nb;
+        // Alpha (data[i+3]) se deja igual
+    }
+}
 </script>
 
 </body>
 </html>
-
 
 
 
