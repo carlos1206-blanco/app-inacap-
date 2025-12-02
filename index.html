@@ -3,23 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ColorAid – Imagen + Cámara Opcional (Filtro Daltonismo)</title>
+<title>ColorAid – Imagen + Cámara Trasera Opcional</title>
 
 <style>
     body { margin:0; font-family:Arial; background:#f2f2f2; text-align:center; }
     header { background:#005bbb; padding:15px; color:white; font-size:22px; }
     h2 { margin-top:25px; }
-    .mode-btn {
+    .mode-btn, .action-btn, .close-btn {
         background:white; padding:12px; margin:10px auto;
         width:80%; max-width:300px; border-radius:10px;
         border-left:6px solid #007bff; cursor:pointer;
         font-size:18px;
     }
-    .action-btn {
-        background:#007bff; color:white; padding:12px; margin-top:15px;
-        border-radius:10px; width:80%; max-width:300px;
-        cursor:pointer; font-size:18px;
-    }
+    .action-btn { background:#007bff; color:white; border-left:none; }
+    .close-btn { background:#ff3b3b; color:white; border-left:none; }
     video, canvas {
         width:90%; max-width:400px; margin-top:15px;
         border-radius:10px; background:black;
@@ -29,7 +26,7 @@
 
 <body>
 
-<header>ColorAid – Imagen + Cámara Opcional</header>
+<header>ColorAid – Imagen + Cámara Trasera Opcional</header>
 
 <h2>1. Selecciona un modo de corrección</h2>
 <div class="mode-btn" onclick="setMatrix('deuteranopia')">Deuteranopia</div>
@@ -43,9 +40,10 @@
 
 <h2>3. Cámara (opcional)</h2>
 
-<div class="action-btn" onclick="startCamera()">Activar cámara con filtro</div>
+<div class="action-btn" onclick="startCamera()">Activar cámara trasera</div>
+<div class="close-btn" onclick="stopCamera()">Cerrar cámara</div>
 
-<!-- cámara oculta hasta que la activen -->
+<!-- Cámara comienza oculta -->
 <video id="video" autoplay playsinline style="display:none;"></video>
 <canvas id="videoCanvas" style="display:none;"></canvas>
 
@@ -126,22 +124,44 @@ function applyMatrixToImage(){
 
 // ---------------- CÁMARA ------------------
 
-let cameraStarted = false;
+let cameraStream = null;
+let cameraRunning = false;
 
 function startCamera(){
-    if(cameraStarted) return;
+    if(cameraRunning) return;
+    cameraRunning = true;
 
-    cameraStarted = true;
-
-    // mostrar elementos
+    // Mostrar elementos
     document.getElementById("video").style.display = "block";
     document.getElementById("videoCanvas").style.display = "block";
 
-    navigator.mediaDevices.getUserMedia({ video:true })
-    .then(stream => video.srcObject = stream)
-    .catch(err => alert("No se pudo acceder a la cámara 😢"));
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            facingMode: { exact: "environment" } // 👈 CÁMARA TRASERA
+        }
+    })
+    .then(stream => {
+        cameraStream = stream;
+        video.srcObject = stream;
+    })
+    .catch(err => {
+        alert("No pude abrir la cámara trasera 😢\nIntentaré con la delantera...");
+        navigator.mediaDevices.getUserMedia({ video:true })
+            .then(stream => video.srcObject = stream);
+    });
 
     processCamera();
+}
+
+function stopCamera(){
+    cameraRunning = false;
+
+    if(cameraStream){
+        cameraStream.getTracks().forEach(t => t.stop());
+    }
+
+    document.getElementById("video").style.display = "none";
+    document.getElementById("videoCanvas").style.display = "none";
 }
 
 const video = document.getElementById("video");
@@ -149,6 +169,8 @@ const videoCanvas = document.getElementById("videoCanvas");
 const vidCtx = videoCanvas.getContext("2d");
 
 function processCamera(){
+    if(!cameraRunning) return;
+
     if(video.readyState === video.HAVE_ENOUGH_DATA){
         videoCanvas.width = video.videoWidth;
         videoCanvas.height = video.videoHeight;
@@ -178,7 +200,6 @@ function processCamera(){
 
     requestAnimationFrame(processCamera);
 }
-
 </script>
 
 </body>
