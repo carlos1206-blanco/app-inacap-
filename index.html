@@ -321,7 +321,7 @@ function filterData(data, m){
 
 /**
  * Dibuja una placa Ishihara simplificada en el canvas usando HSL.
- * Se ha mejorado el contraste de Luminosidad entre el número y el fondo para garantizar la visibilidad.
+ * La corrección AUMENTA EL CONTRASTE de Luminosidad para garantizar la visibilidad.
  */
 function drawIshiharaPlate(ctx, targetNumber, W, H) {
     // 1. Limpiar el canvas
@@ -332,16 +332,16 @@ function drawIshiharaPlate(ctx, targetNumber, W, H) {
     const centerY = H / 2;
     const numCircles = 1000;
     
-    // Rango de Tonalidades (Hue) para la simulación R/V:
+    // Rangos de Tonalidades (Hue) para simulación R/V:
     const BG_HUE_RANGE = [90, 150]; // Verdes/Amarillo-Verde
     const NUM_HUE_RANGE = [330, 30]; // Rojos/Naranja-Rojo
     
-    // Configuración de contraste de Luminosidad CORREGIDA
-    const BG_LIGHTNESS_RANGE = [40, 50]; // Fondo Ligeramente más Oscuro
-    const NUM_LIGHTNESS_RANGE = [60, 70]; // Número Ligeramente más Claro
+    // **CORRECCIÓN DE LUMINOSIDAD:** Aumentamos la diferencia de claridad para ver el número.
+    const BG_LIGHTNESS_RANGE = [30, 45]; // Fondo: Oscuro (30% - 45% de claridad)
+    const NUM_LIGHTNESS_RANGE = [65, 80]; // Número: Claro (65% - 80% de claridad)
 
     
-    // Usar un buffer temporal para dibujar el número primero (Stencil)
+    // Usar un buffer temporal para dibujar el número (Stencil)
     let bufferCanvas = document.createElement('canvas');
     bufferCanvas.width = W;
     bufferCanvas.height = H;
@@ -358,132 +358,12 @@ function drawIshiharaPlate(ctx, targetNumber, W, H) {
     for (let i = 0; i < numCircles; i++) {
         let x = Math.random() * W; 
         let y = Math.random() * H; 
-        let r = Math.random() * 7 + 2; // Radio de 2 a 9
+        let r = Math.random() * 7 + 2; 
 
+        // Comprobar si el punto cae sobre el área del número (negro en el stencil)
         let pixelData = bufferCtx.getImageData(x, y, 1, 1).data;
         let isNumberArea = (pixelData[0] === 0 && pixelData[1] === 0 && pixelData[2] === 0);
         
         let hue;
         let light;
-        const sat = Math.floor(Math.random() * 30 + 60); // Saturación media (60-90)
-
-        // Asignar color y luminosidad según el área (Número o Fondo)
-        if (isNumberArea && Math.random() < 0.8) { 
-            // Color del número (Rojo)
-            hue = Math.floor(Math.random() * (NUM_HUE_RANGE[1] + 360 - NUM_HUE_RANGE[0])) % 360;
-            // Luminosidad del número (Más claro)
-            light = Math.floor(Math.random() * (NUM_LIGHTNESS_RANGE[1] - NUM_LIGHTNESS_RANGE[0]) + NUM_LIGHTNESS_RANGE[0]);
-        } else {
-            // Color de fondo (Verde)
-            hue = Math.floor(Math.random() * (BG_HUE_RANGE[1] - BG_HUE_RANGE[0]) + BG_HUE_RANGE[0]);
-            // Luminosidad del fondo (Más oscuro)
-            light = Math.floor(Math.random() * (BG_LIGHTNESS_RANGE[1] - BG_LIGHTNESS_RANGE[0]) + BG_LIGHTNESS_RANGE[0]);
-        }
-        
-        ctx.fillStyle = `hsl(${hue}, ${sat}%, ${light}%)`;
-        
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-    }
-}
-
-
-function startTest(){
-    if (cameraRunning) stopCamera();
-    
-    // Ocultar canvases de imagen/video
-    document.getElementById("imageCanvas").style.display = "none";
-    document.getElementById("videoCanvas").style.display = "none";
-
-    document.getElementById("testResult").textContent = "";
-    document.getElementById("testStartBtn").style.display = "none";
-    testStep = 0;
-    testCorrect = 0;
-    
-    // Iniciar el primer paso
-    nextTestStep();
-}
-
-function nextTestStep(){
-    testStep++;
-    
-    // Ocultar todos los pasos
-    document.querySelectorAll('.test-step').forEach(el => el.style.display = 'none');
-
-    if (testStep > testNumbers.length) {
-        finishTest();
-        return;
-    }
-
-    // Mostrar el paso actual
-    const currentStepDiv = document.getElementById(`step${testStep}`);
-    currentStepDiv.style.display = 'block';
-    document.getElementById(`ans${testStep}`).value = ''; 
-
-    // Mostrar el canvas y dibujar la placa SIN filtro
-    document.getElementById("testCanvas").style.display = "block";
-    testCanvas.width = 200;
-    testCanvas.height = 200;
-    
-    const numberToDraw = testNumbers[testStep - 1];
-    drawIshiharaPlate(testCtx, numberToDraw, testCanvas.width, testCanvas.height);
-}
-
-function checkAnswer(step, correctAnswer){
-    const userAnswer = parseInt(document.getElementById(`ans${step}`).value);
-    
-    if (isNaN(userAnswer)) {
-        alert("Por favor, ingresa un número.");
-        return;
-    }
-    
-    let isCorrectWithoutAid = (userAnswer === correctAnswer);
-    
-    if (isCorrectWithoutAid) {
-        testCorrect++;
-    }
-
-    // 2. Simular el efecto ColorAid 
-    if(selectedMatrix){
-        // Redibujar la placa (limpia)
-        const numberToDraw = testNumbers[step - 1];
-        drawIshiharaPlate(testCtx, numberToDraw, testCanvas.width, testCanvas.height);
-        
-        // Aplicar el filtro a la placa recién dibujada
-        let imgData = testCtx.getImageData(0, 0, testCanvas.width, testCanvas.height);
-        filterData(imgData.data, selectedMatrix);
-        testCtx.putImageData(imgData, 0, 0);
-        
-        alert(`Tu respuesta fue: ${userAnswer}. El número correcto era: ${correctAnswer}.\n\nAhora, con la corrección de ColorAid aplicada, intenta ver el número nuevamente.`);
-    } else {
-        alert(`Tu respuesta fue: ${userAnswer}. El número correcto era: ${correctAnswer}.\n\nSelecciona un modo de corrección (Deuteranopia, Protanopia o Tritanopia) en el Paso 1 para ver el efecto ColorAid.`);
-    }
-
-    // 3. Pasar al siguiente paso después de un breve tiempo para que vea el resultado filtrado
-    setTimeout(nextTestStep, 3000); 
-}
-
-
-function finishTest(){
-    document.getElementById("testCanvas").style.display = "none";
-    document.getElementById("testStartBtn").style.display = "block";
-    
-    let resultText = `✅ Test Finalizado. Aciertos: ${testCorrect} de ${testNumbers.length}.\n`;
-    
-    if (testCorrect === testNumbers.length) {
-        resultText += "¡Excelente! No pareces tener problemas significativos de visión de color con estas placas.";
-    } else if (testCorrect >= testNumbers.length / 2) {
-        resultText += "Podrías tener una deficiencia leve de visión de color. Consulta un especialista.";
-    } else {
-        resultText += "Es probable que tengas una deficiencia de visión de color (daltonismo). Consulta un especialista.";
-    }
-    
-    document.getElementById("testResult").textContent = resultText;
-    
-    testStep = 0; 
-}
-</script>
-
-</body>
-</html>
+        const sat
