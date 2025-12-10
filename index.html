@@ -28,54 +28,46 @@
         transition: transform 0.1s;
     }
     
-    .mode-btn:active, .action-btn:active, #testStartBtn:active { transform: scale(0.98); }
     .action-btn { background:#007bff; color:white; border-left:none; }
-    .close-btn { background:#ff3b3b; color:white; border-left:none; display: none; }
-    
+    .close-btn { background:#ff3b3b; color:white; border-left:none; display:none; }
+
+    canvas {
+        width:90%; max-width:380px; background:#ddd;
+        border-radius:10px; margin:15px auto; display:block;
+    }
+
     .test-step {
-        background: white;
-        padding: 20px;
-        margin: 20px auto;
-        max-width: 450px;
-        border-radius: 10px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        display: none; 
-        text-align: left;
+        background:white; padding:20px; margin:20px auto;
+        max-width:400px; border-radius:10px;
+        box-shadow:0 4px 10px rgba(0,0,0,0.15);
     }
 
     .test-step input[type="number"] {
-        padding: 10px;
-        font-size: 18px;
-        width: 100px;
-        border: 1px solid #ccc;
-        border-radius: 5px;
+        padding:10px; font-size:18px; width:120px;
+        border-radius:6px; border:1px solid #aaa;
     }
 
-    canvas {
-        width:90%; max-width:400px; margin-top:15px;
-        border-radius:10px; background:#ddd;
-        display: block; margin-left: auto; margin-right: auto;
-    }
-
-    #videoElement { display: none; }
 </style>
 </head>
 
 <body>
 
-<header>ColorAid – Corrección y Test</header>
+<header>ColorAid – Corrección y Test Ishihara</header>
 
-<h2>1. Selecciona el modo de corrección</h2>
+<!-- 1. Selección de modo -->
+<h2>1. Selecciona el modo</h2>
 <div class="mode-container">
     <div class="mode-btn" onclick="setMatrix('deuteranopia')">Deuteranopia</div>
     <div class="mode-btn" onclick="setMatrix('protanopia')">Protanopia</div>
     <div class="mode-btn" onclick="setMatrix('tritanopia')">Tritanopia</div>
 </div>
 
+<!-- 2. Imagen -->
 <h2>2. Subir imagen</h2>
 <input type="file" id="imageInput" accept="image/*">
 <canvas id="imageCanvas"></canvas>
 
+<!-- 3. Cámara -->
 <h2>3. Cámara en vivo</h2>
 <div class="action-btn" id="btnStart" onclick="startCamera()">Activar cámara</div>
 <div class="close-btn" id="btnStop" onclick="stopCamera()">Detener cámara</div>
@@ -84,12 +76,13 @@
 
 <hr>
 
-<h2>4. Test de Color Ishihara (Placas reales)</h2>
+<!-- 4. Test -->
+<h2>4. Test de Color Ishihara (Imágenes reales)</h2>
 <div class="action-btn" id="testStartBtn" onclick="startTest()">Iniciar Test</div>
 
 <canvas id="testCanvas" style="display:none;"></canvas>
 
-<div class="test-step" id="testInputBox">
+<div class="test-step" id="answerBox" style="display:none;">
     <p>¿Qué número ves?</p>
     <input type="number" id="testAnswer">
     <div class="test-input-btn" onclick="submitAnswer()">Responder</div>
@@ -98,7 +91,9 @@
 <div id="testResult" style="margin:20px; font-size:18px; font-weight:bold; color:#005bbb;"></div>
 
 <script>
-// ---------------- MATRICES DE CORRECCIÓN ----------------
+// --------------------------------------------
+// MATRICES DE CORRECCIÓN
+// --------------------------------------------
 let selectedMatrix = null;
 
 const matrices = {
@@ -122,137 +117,128 @@ const matrices = {
 function setMatrix(type){
     selectedMatrix = matrices[type];
     alert("Modo activado: " + type);
-    if(originalImg.src && !cameraRunning) applyMatrixToImage();
 }
 
-// ---------------- SUBIR IMAGEN ----------------
+// --------------------------------------------
+// CARGA DE IMAGEN
+// --------------------------------------------
 let originalImg = new Image();
 const imageCanvas = document.getElementById("imageCanvas");
 const imgCtx = imageCanvas.getContext("2d");
 
-document.getElementById("imageInput").addEventListener("change", function(e){
+document.getElementById("imageInput").addEventListener("change", e=>{
     const file = e.target.files[0];
     if(!file) return;
 
-    if(cameraRunning) stopCamera();
-
     const reader = new FileReader();
-    reader.onload = function(event){
+    reader.onload = ev=>{
         originalImg = new Image();
-        originalImg.onload = function(){
-            const scale = 800 / originalImg.width;
+        originalImg.onload = ()=>{
+            let scale = 800 / originalImg.width;
             imageCanvas.width = 800;
             imageCanvas.height = originalImg.height * scale;
 
             imgCtx.drawImage(originalImg, 0, 0, imageCanvas.width, imageCanvas.height);
 
-            if(selectedMatrix) applyMatrixToImage();
-        }
-        originalImg.src = event.target.result;
-    }
+            if(selectedMatrix) applyMatrix(imageCanvas, imgCtx);
+        };
+        originalImg.src = ev.target.result;
+    };
     reader.readAsDataURL(file);
 });
 
-function applyMatrixToImage(){
-    if(!selectedMatrix) return;
-    
-    imgCtx.drawImage(originalImg, 0, 0, imageCanvas.width, imageCanvas.height);
+function applyMatrix(canvas, ctx){
+    let img = ctx.getImageData(0,0,canvas.width,canvas.height);
+    let data = img.data;
 
-    let imgData = imgCtx.getImageData(0, 0, imageCanvas.width, imageCanvas.height);
-    filterData(imgData.data, selectedMatrix);
-    imgCtx.putImageData(imgData, 0, 0);
-}
+    for(let i=0;i<data.length;i+=4){
+        let r=data[i], g=data[i+1], b=data[i+2];
 
-// ---------------- FILTRO ----------------
-function filterData(data, m){
-    for(let i=0; i<data.length; i+=4){
-        let r = data[i], g = data[i+1], b = data[i+2];
+        let nr=r*selectedMatrix[0][0] + g*selectedMatrix[0][1] + b*selectedMatrix[0][2];
+        let ng=r*selectedMatrix[1][0] + g*selectedMatrix[1][1] + b*selectedMatrix[1][2];
+        let nb=r*selectedMatrix[2][0] + g*selectedMatrix[2][1] + b*selectedMatrix[2][2];
 
-        let nr = r*m[0][0] + g*m[0][1] + b*m[0][2];
-        let ng = r*m[1][0] + g*m[1][1] + b*m[1][2];
-        let nb = r*m[2][0] + g*m[2][1] + b*m[2][2];
-
-        data[i]   = Math.min(255, Math.max(0, nr));
-        data[i+1] = Math.min(255, Math.max(0, ng));
-        data[i+2] = Math.min(255, Math.max(0, nb));
+        data[i]  = Math.min(255, Math.max(0,nr));
+        data[i+1]= Math.min(255, Math.max(0,ng));
+        data[i+2]= Math.min(255, Math.max(0,nb));
     }
+
+    ctx.putImageData(img,0,0);
 }
 
-// ---------------- CÁMARA ----------------
-let cameraStream = null;
-let cameraRunning = false;
-let animationId = null;
+// --------------------------------------------
+// CÁMARA
+// --------------------------------------------
+let cameraStream=null, cameraRunning=false;
 
-const videoCanvas = document.getElementById("videoCanvas");
-const videoElement = document.getElementById("videoElement");
-const vidCtx = videoCanvas.getContext("2d", { willReadFrequently: true });
+const videoCanvas=document.getElementById("videoCanvas");
+const videoElement=document.getElementById("videoElement");
+const vidCtx=videoCanvas.getContext("2d",{willReadFrequently:true});
 
 function startCamera(){
-    navigator.mediaDevices.getUserMedia({ video:{ facingMode: "environment" }})
-    .then(stream => {
-        cameraStream = stream;
-        videoElement.srcObject = stream;
-        cameraRunning = true;
+    navigator.mediaDevices.getUserMedia({video:true})
+    .then(stream=>{
+        cameraStream=stream;
+        videoElement.srcObject=stream;
+        cameraRunning=true;
 
-        document.getElementById("videoCanvas").style.display = "block";
-        document.getElementById("btnStart").style.display = "none";
-        document.getElementById("btnStop").style.display = "block";
+        document.getElementById("btnStart").style.display="none";
+        document.getElementById("btnStop").style.display="block";
+        videoCanvas.style.display="block";
 
-        requestAnimationFrame(processCamera);
+        requestAnimationFrame(loopCamera);
     });
 }
 
-function stopCamera(){
-    cameraRunning = false;
-    if(cameraStream){
-        cameraStream.getTracks().forEach(track => track.stop());
-    }
-    document.getElementById("btnStart").style.display = "block";
-    document.getElementById("btnStop").style.display = "none";
-    videoCanvas.style.display = "none";
-}
-
-function processCamera(){
+function loopCamera(){
     if(!cameraRunning) return;
 
-    videoCanvas.width = videoElement.videoWidth;
-    videoCanvas.height = videoElement.videoHeight;
+    videoCanvas.width=videoElement.videoWidth;
+    videoCanvas.height=videoElement.videoHeight;
 
-    vidCtx.drawImage(videoElement, 0, 0);
+    vidCtx.drawImage(videoElement,0,0);
 
-    if(selectedMatrix){
-        let frame = vidCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
-        filterData(frame.data, selectedMatrix);
-        vidCtx.putImageData(frame, 0, 0);
-    }
+    if(selectedMatrix) applyMatrix(videoCanvas, vidCtx);
 
-    animationId = requestAnimationFrame(processCamera);
+    requestAnimationFrame(loopCamera);
 }
 
-// ---------------- TEST ISHIHARA REAL ----------------
-const testCanvas = document.getElementById("testCanvas");
-const testCtx = testCanvas.getContext("2d");
+function stopCamera(){
+    cameraRunning=false;
+    if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
+    document.getElementById("btnStart").style.display="block";
+    document.getElementById("btnStop").style.display="none";
+    videoCanvas.style.display="none";
+}
 
+// --------------------------------------------
+// TEST ISHIHARA (SIN CARPETAS – SOLO URLs)
+// --------------------------------------------
+
+// Estas URLs funcionan sin carpeta
 let plates = [
-    { src: "plates/12.jpg", answer: 12 },
-    { src: "plates/8.jpg", answer: 8 },
-    { src: "plates/29.jpg", answer: 29 },
-    { src: "plates/57.jpg", answer: 57 },
-    { src: "plates/5.jpg", answer: 5 },
-    { src: "plates/3.jpg", answer: 3 }
+    { src: "https://i.imgur.com/k0vD2hC.png", answer: 12 },
+    { src: "https://i.imgur.com/j3E2nEM.png", answer: 8 },
+    { src: "https://i.imgur.com/0gq8pnn.png", answer: 29 },
+    { src: "https://i.imgur.com/AMjsH9G.png", answer: 57 },
+    { src: "https://i.imgur.com/iMZcuE3.png", answer: 5 },
+    { src: "https://i.imgur.com/veR9g8W.png", answer: 3 }
 ];
 
-let step = 0;
-let correct = 0;
+let step=0, correct=0;
+
+const testCanvas=document.getElementById("testCanvas");
+const testCtx=testCanvas.getContext("2d");
 
 function startTest(){
     stopCamera();
 
-    step = 0;
-    correct = 0;
+    step=0;
+    correct=0;
 
-    document.getElementById("testResult").textContent = "";
-    document.getElementById("testStartBtn").style.display = "none";
+    document.getElementById("testStartBtn").style.display="none";
+    document.getElementById("answerBox").style.display="none";
+    document.getElementById("testResult").textContent="";
 
     nextPlate();
 }
@@ -265,59 +251,51 @@ function nextPlate(){
         return;
     }
 
-    const img = new Image();
-    img.onload = function(){
-        testCanvas.style.display = "block";
-
-        testCanvas.width = 350;
-        testCanvas.height = 350;
-
-        testCtx.drawImage(img, 0, 0, 350, 350);
+    const img=new Image();
+    img.crossOrigin="anonymous"; 
+    img.onload=function(){
+        testCanvas.style.display="block";
+        testCanvas.width=350;
+        testCanvas.height=350;
+        testCtx.drawImage(img,0,0,350,350);
     };
-    img.src = plates[step-1].src;
+    img.src=plates[step-1].src;
 
-    document.getElementById("testAnswer").value = "";
-    document.getElementById("testInputBox").style.display = "block";
+    document.getElementById("answerBox").style.display="block";
+    document.getElementById("testAnswer").value="";
 }
 
 function submitAnswer(){
-    const user = parseInt(document.getElementById("testAnswer").value);
-    const correctAns = plates[step-1].answer;
+    let val=parseInt(document.getElementById("testAnswer").value);
+    let correctAns=plates[step-1].answer;
 
-    if(user === correctAns) correct++;
+    if(val === correctAns) correct++;
 
     if(selectedMatrix){
-        let imgData = testCtx.getImageData(0, 0, 350, 350);
-        filterData(imgData.data, selectedMatrix);
-        testCtx.putImageData(imgData, 0, 0);
-
-        alert("Placa corregida con ColorAid.\nObserva si ahora ves mejor el número.");
-        setTimeout(nextPlate, 2000);
+        applyMatrix(testCanvas, testCtx);
+        alert("Imagen corregida. Observa si ahora ves mejor el número.");
+        setTimeout(nextPlate,2000);
     } else {
         nextPlate();
     }
 }
 
 function finishTest(){
-    testCanvas.style.display = "none";
-    document.getElementById("testInputBox").style.display = "none";
-    document.getElementById("testStartBtn").style.display = "block";
+    testCanvas.style.display="none";
+    document.getElementById("answerBox").style.display="none";
+    document.getElementById("testStartBtn").style.display="block";
 
     let msg = `Aciertos: ${correct} de ${plates.length}. `;
+    if(correct === plates.length) msg+="No se observan indicios de daltonismo.";
+    else if(correct >= plates.length/2) msg+="Posible deficiencia leve.";
+    else msg+="Alto indicio de daltonismo.";
 
-    if(correct === plates.length){
-        msg += "No se observan indicios de daltonismo.";
-    } else if(correct >= plates.length / 2){
-        msg += "Podrías tener una deficiencia leve.";
-    } else {
-        msg += "Alto indicio de daltonismo. Se recomienda evaluación profesional.";
-    }
-
-    document.getElementById("testResult").textContent = msg;
+    document.getElementById("testResult").textContent=msg;
 }
 
 </script>
 
 </body>
 </html>
+
 
